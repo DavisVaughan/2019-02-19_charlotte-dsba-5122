@@ -175,7 +175,7 @@ ia_map
 # `tidymodels` <img src="images/tidymodels_hex.png" class="title-hex">
 
 
-```{r tm}
+```{r tm, warning=FALSE}
 library(tidymodels)
 ```
 
@@ -185,7 +185,7 @@ Plus [`tidypredict`](http://tidypredict.netlify.com/), [`tidyposterior`](https:/
 
 # Examples of `purrr::map()` <img src="images/dplyr.png" class="title-hex"><img src="images/purrr.png" class="title-hex">
 
-```{r purrr-setup, message = FALSE, echo=FALSE}
+```{r purrr-setup, message = FALSE, echo=FALSE, warning=FALSE}
 library(tidyverse)
 ```
 
