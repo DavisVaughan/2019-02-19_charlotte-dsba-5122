@@ -1,6 +1,6 @@
 ---
-title: "Applied Machine Learning -  Basic Principles"
-author: Max Kuhn (RStudio)
+title: "Modeling Principles - Fitting and Resampling"
+author: Davis Vaughan (RStudio) (and Max Kuhn)
 output:
   xaringan::moon_reader:
     css: ["mtheme_max.css", "fonts_mtheme_max.css"]  
@@ -12,6 +12,8 @@ output:
 editor_options: 
   chunk_output_type: console
 ---
+
+# Introduction
 
 ```{r startup, include = FALSE, message = FALSE, warning = FALSE}
 library(caret)
@@ -32,17 +34,6 @@ thm <- theme_bw() +
 theme_set(thm)
 ```
 
-# Load Packages  <img src="images/tidymodels_hex.png" class="title-hex">
-
-.code70[
-```{r tm-load, warning = FALSE}
-library(tidymodels)
-```
-]
-
----
-# Introduction
-
 In this section, we will introduce concepts that are useful for any type of machine learning model:
 
 * _modeling_ versus the model
@@ -58,6 +49,261 @@ In this section, we will introduce concepts that are useful for any type of mach
 
 Many of these topics will be put into action in later sections.
 
+---
+
+# Example Data Set - House Prices
+
+For regression problems, we will use the Ames IA housing data. There are 2,930 properties in the data. 
+
+The Sale Price was recorded along with 81 predictors, including:
+
+* Location (e.g. neighborhood) and lot information.
+* House components (garage, fireplace, pool, porch, etc.).
+* General assessments such as overall quality and condition.
+* Number of bedrooms, baths, and so on. 
+
+More details can be found in [De Cock (2011, Journal of Statistics Education)](http://ww2.amstat.org/publications/jse/v19n3/decock.pdf).
+
+The raw data are at [`http://bit.ly/2whgsQM`](http://bit.ly/2whgsQM) but we will use a processed version found in the [`AmesHousing`](https://github.com/topepo/AmesHousing) package. 
+
+---
+
+# Example Data Set - House Prices
+
+```{r ames-map, echo = FALSE, message = FALSE, fig.align='center', dev = "svg", warning=FALSE}
+library(AmesHousing)
+library(leaflet)
+library(htmltools)
+library(Cairo)
+library(dplyr)
+ames <- make_ames()
+
+col_key <- c(
+  'NAmes',     '#0000FF',
+  'CollgCr',   '#FF0000',
+  'OldTown',   '#FFFFFF',
+  'Edwards',   '#FF00B6',
+  'Somerst',   '#FF3030',
+  'NridgHt',   '#009FFF',
+  'Gilbert',   '#DD00FF',
+  'Sawyer',    '#9A4D42',
+  'NWAmes',    '#00FFBE',
+  'SawyerW',   '#1F9698',
+  'Mitchel',   '#FFACFD',
+  'BrkSide',   '#720055',
+  'Crawfor',   '#F1085C',
+  'IDOTRR',    '#FE8F42',
+  'Timber',    '#004CFF',
+  'NoRidge',   '#ffff00',
+  'StoneBr',   '#B1CC71',
+  'SWISU',     '#02AD24',
+  'ClearCr',   '#FFD300',
+  'MeadowV',   '#886C00',
+  'BrDale',    '#FFB79F',
+  'Blmngtn',   '#858567',
+  'Veenker',   '#A10300',
+  'NPkVill',   '#00479E',
+  'Blueste',   '#DC5E93',
+  'Greens',    '#93D4FF',
+  'GreenHills', '#e5f2e5', 
+  'Landmrk',   '#C8FF00'
+) 
+col_key <- as.data.frame(matrix(col_key, byrow = TRUE, ncol = 2))
+names(col_key) <- c("Neighborhood", "color")
+col_key <- col_key %>%
+    mutate(
+      Neighborhood =
+        dplyr::recode(
+          Neighborhood,
+          "Blmngtn" = "Bloomington_Heights",
+          "Bluestem" = "Bluestem",
+          "BrDale" = "Briardale",
+          "BrkSide" = "Brookside",
+          "ClearCr" = "Clear_Creek",
+          "CollgCr" = "College_Creek",
+          "Crawfor" = "Crawford",
+          "Edwards" = "Edwards",
+          "Gilbert" = "Gilbert",
+          "Greens" = "Greens",
+          "GreenHills" = "Green_Hills",
+          "IDOTRR" = "Iowa_DOT_and_Rail_Road",
+          "Landmrk" = "Landmark",
+          "MeadowV" = "Meadow_Village",
+          "Mitchel" = "Mitchell",
+          "NAmes" = "North_Ames",
+          "NoRidge" = "Northridge",
+          "NPkVill" = "Northpark_Villa",
+          "NridgHt" = "Northridge_Heights",
+          "NWAmes" = "Northwest_Ames",
+          "OldTown" = "Old_Town",
+          "SWISU" = "South_and_West_of_Iowa_State_University",
+          "Sawyer" = "Sawyer",
+          "SawyerW" = "Sawyer_West",
+          "Somerst" = "Somerset",
+          "StoneBr" = "Stone_Brook",
+          "Timber" = "Timberland",
+          "Veenker" = "Veenker"
+        ))
+
+lon_rnd <- range(ames$Longitude)
+lat_rnd <- range(ames$Latitude)
+
+ia_map <- leaflet(width = "100%") %>%
+  addProviderTiles(providers$Stamen.Toner)
+
+for(i in 1:nrow(col_key)) {
+  ia_map <- ia_map %>%
+    addCircles(
+      data = subset(ames, Neighborhood == col_key$Neighborhood[i]),
+      lng = ~Longitude, lat = ~Latitude,
+      color = col_key$color[i],
+      fill = TRUE,
+      fillColor = col_key$color[i],
+      radius = 6,
+      popup = htmlEscape(col_key$Neighborhood[i]),
+      opacity = .25)
+}
+ia_map
+```
+
+---
+
+# `tidymodels` Collection of Packages  <img src="images/tidymodels_hex.png" class="title-hex">
+
+
+```{r tm}
+library(tidymodels)
+```
+
+Plus [`tidypredict`](http://tidypredict.netlify.com/), [`tidyposterior`](https://tidymodels.github.io/tidyposterior/), [`tidytext`](https://github.com/juliasilge/tidytext), and more in development.
+
+---
+
+# Examples of `purrr::map*` <img src="images/dplyr.png" class="title-hex"><img src="images/purrr.png" class="title-hex">
+
+```{r purrr-setup, message = FALSE, echo=FALSE}
+library(tidyverse)
+
+ames_prices <- "http://bit.ly/2whgsQM" %>%
+  read_delim(delim = "\t") %>%
+  rename_at(vars(contains(' ')), funs(gsub(' ', '_', .))) %>%
+  rename(Sale_Price = SalePrice) %>%
+  filter(!is.na(Electrical)) %>%
+  select(-Order, -PID, -Garage_Yr_Blt)
+```
+
+purrr contains functions that _iterate over lists_ without the explicit use of loops. They are similar to the family of apply functions in base R, but are type stable.
+
+.pull-left[
+
+```{r purrr-example-lhs}
+library(purrr)
+
+mini_ames <- ames_prices %>%
+  select(Alley, Sale_Price, Yr_Sold) %>%
+  filter(!is.na(Alley))
+
+head(mini_ames, n = 5)
+```
+
+]
+
+.pull-right[
+```{r purrr-split-map}
+by_alley <- split(mini_ames, mini_ames$Alley)
+map(by_alley, head, n = 2)
+```
+
+]
+
+---
+
+# Examples of `purrr::map*` <img src="images/dplyr.png" class="title-hex"><img src="images/purrr.png" class="title-hex">
+
+.pull-left[
+```{r purrr-map-nrow}
+map(by_alley, nrow)
+```
+
+`map()` always returns a list. Use suffixed versions for simplification of the result.
+
+```{r purrr-map-int}
+map_int(by_alley, nrow)
+```
+
+]
+
+.pull-right[
+
+Complex operations can be specified using a _formula notation_. Access the current
+thing you are iterating over with `.x`.
+
+```{r purrr-map-summarise}
+map(
+  by_alley, 
+  ~summarise(.x, max_price = max(Sale_Price))
+)
+```
+
+]
+
+---
+
+# `purrr` and list-columns <img src="images/dplyr.png" class="title-hex"><img src="images/purrr.png" class="title-hex"><img src="images/tidyr.png" class="title-hex">
+
+Rather than using `split()`, we can `tidyr::nest()` by `Alley` to get a data frame with
+a _list-column_. We often use these when working with _multiple models_.
+
+.pull-left[
+
+```{r tidyr-nest}
+ames_lst_col <- nest(mini_ames, -Alley)
+ames_lst_col
+```
+
+]
+
+.pull-right[
+
+```{r list-col-mutate}
+ames_lst_col %>%
+  mutate(
+    n_row = map_int(data, nrow),
+    max   = map_dbl(data, ~max(.x$Sale_Price))
+  )
+```
+
+]
+
+---
+
+# List-columns and `unnest()` <img src="images/purrr.png" class="title-hex"><img src="images/tidyr.png" class="title-hex">
+
+`unnest()` repeats regular columns once for each row of the unnested list-column. `"Pave"` is repeated 78 times, and `"Grvl"` is repeated 120 times.
+
+.pull-left[
+
+```{r list-col-print}
+ames_lst_col
+```
+
+You can unnest multiple list-columns at once if they have the same number of rows. We will use this when unnesting predictions for each resample.
+
+]
+
+.pull-right[
+
+```{r unnest-example}
+unnest(ames_lst_col, data)
+```
+
+]
+
+---
+layout: false
+class: inverse, middle, center
+
+# Modeling
 
 ---
 
@@ -179,21 +425,6 @@ Given a fixed amount of data:
 Statistically, the best course of action would be to use all the data for model building and use statistical methods to get good estimates of error.
 
 From a non-statistical perspective, many consumers of complex models emphasize the need for an untouched set of samples to evaluate performance.
-
-
----
-
-# Large Data Sets
-
-When a large amount of data are available, it might seem like a good idea to put a large amount into the training set. _Personally_, I think that this causes more trouble than it is worth due to diminishing returns on performance and the added cost and complexity of the required infrastructure. 
-
-Alternatively, it is probably a better idea to reserve good percentages of the data for specific parts of the modeling process. For example: 
-
-* Save a large chunk of data to perform feature selection prior to model building
-* Retain data to calibrate class probabilities or determine a cutoff via an ROC curve. 
-
-Also, there may be little need for iterative resampling of the data. A single holdout (aka validation set) may be sufficient in some cases if the data are large enough and the data sampling mechanism is solid.  
-
 
 ---
 
@@ -385,21 +616,6 @@ To get the statistics on the individual data points, we will use the awesome `br
 simple_lm_values <- augment(simple_lm)
 names(simple_lm_values)
 ``` 
-
-
----
-
-# Hands-On: Some Basic Diagnostics 
-
-From these results, let's take 10 minutes and do some visualizations: 
-
-* Plot the observed versus fitted values
-
-* Plot the residuals
-
-* Plot the predicted versus residuals
-
-Are there any _downsides_ to this approach? 
 
 ---
 
@@ -790,23 +1006,6 @@ ggplot(bt_rows, aes(x = Resample, y = Row, fill = Replicates)) +
         panel.grid.minor = element_blank())
 ```
 
-
----
-
-# Comparing Resampling Methods
-
-If you think of resampling in the same manner as statistical estimators (e.g. maximum likelihood), this becomes a trade-off between bias and variance:
-
- * Variance is (mostly) driven by the number of resamples (e.g. 5-fold CV has larger variance than 10-fold). 
- * Bias is (mostly) related to how much data is held back. The bootstrap has large bias compared to 10-fold CV. 
-
-There are lengthy blog posts about this subject [here](http://bit.ly/1yE0Ss5) and [here](http://bit.ly/1zfoFj2). 
-
-I tend to favor 5 repeats of 10-fold cross-validation unless the size of the assessment data is "large enough". 
-
-For example, 10% of the Ames training set is `r floor(nrow(ames_train)*.1)` properties and this is probably good enough to estimate the RMSE and _R_<sup>2</sup>.  
-
-
 ---
 
 # Cross-Validating Using `rsample` <img src="images/rsample.png" class="title-hex">
@@ -1017,7 +1216,6 @@ rmse_cv <- cv_splits$perf_lm %>%
   mean()
 ```
 
-
 Previously, I mentioned that the performance metrics that were naively calculated from the training set could be optimistic. However, this approach estimates the RMSE to be `r round(summary(simple_lm)$sigma, 4)` and cross-validation produced an estimate of `r round(rmse_cv, 4)`. What was the big deal? 
 
 Linear regression is a _high bias model_. This means that it is fairly incapable at being able to adapt the underlying model function (unless it is linear). For this reason, linear regression is unlikely to **overfit** to the training set and our two estimates are likely to be the same. 
@@ -1030,781 +1228,6 @@ However, as before, there is also variance to consider. Linear regression is ver
 
 ---
 
-# Diagnostics Again <img src="images/rsample.png" class="title-hex"><img src="images/purrr.png" class="title-hex"><img src="images/broom.png" class="title-hex">
+# What did we learn?
 
-Now let's look at diagnostics using the predictions from the assessment sets. 
-
-```{r lm-assess, warning=FALSE, message=FALSE}
-holdout_results <- 
-  cv_splits %>%
-  unnest(pred_lm) %>%
-  mutate(.resid = Sale_Price_Log - .pred)
-
-holdout_results %>% dim()
-ames_train %>% dim()
-```
-
----
-
-# Hands-On: Partial Residual Plots <img src="images/rsample.png" class="title-hex"><img src="images/purrr.png" class="title-hex"><img src="images/broom.png" class="title-hex">
-
-A partial residual plot is used to diagnose what variables _should_ have been in the model. 
-
-We can plot the hold-out residuals versus different variables to understand if they should have been in the model
-
- * If the residuals have no pattern in the data, they are likely to be irrelevant. 
- 
- * If a pattern is seen, it suggests that the variable should have been in the model.
- 
-Take 10 min and use `ggplot` to investigate the other predictors using the `holdout_results` data frame. `geom_smooth()` might come in handy. 
-
-
----
-layout: false
-class: inverse, middle, center
-
-#  Tuning Parameters and Overfitting
-
-
----
-
-# _K_-Nearest Neighbors Model
-
-Now let's consider a more flexible model that is _low bias_: _K_-nearest neighbors.
-
-The model stores the training set (including the outcome). 
-
-When a new sample is predicted, _K_ training set points are found that are most similar to the new sample being predicted. 
-
-The predicted value for the new sample is some summary statistic of the neighbors, usually: 
-
-* the mean for regression, or
-* the mode for classification.
-
-When _K_ is small, the model might be _too_ responsive to the underlying data. When _K_ is large, it begins to "over smooth" the neighbors and performance suffers. 
-
-Ordinarily, since we are computing a distance, we would want to center and scale the predictors. Our two predictors are already on the same scale so we can skip this step. 
-
----
-
-# _5_-Nearest Neighbors Model
-
-```{r knn-map, echo = FALSE, message = FALSE, fig.align='center'}
-pp <- preProcess(ames_train[, c("Latitude", "Longitude")])
-train_ll <- predict(pp, ames_train[, c("Latitude", "Longitude")])
-test_ll  <- predict(pp, ames_test[, c("Latitude", "Longitude")])
-
-test_instance <- 13
-k <- 5
-dists <- proxy::dist(as.matrix(train_ll),
-                     as.matrix(test_ll[test_instance, , drop = FALSE]))
-dists <- data.frame(distance = dists[, 1],
-                    row = 1:nrow(dists))
-dists <- head(dists[order(dists),], k)
-
-local_ames_train <- ames_train[dists$row,]
-
-local_ames_train$errors <- unlist(rep(ames_test[test_instance, "Sale_Price"], k)) - 
-  local_ames_train$Sale_Price
-local_ames_train$to_log <- unlist(rep(ames_test[test_instance, "Longitude"], k))
-local_ames_train$to_lat <- unlist(rep(ames_test[test_instance, "Latitude"], k))
-
-knn_map <- leaflet(width = "80%") %>%
-  setView(lng = local_ames_train$to_log[1], lat = local_ames_train$to_lat[1], zoom = 18) %>%
-  addProviderTiles(providers$CartoDB.DarkMatterNoLabels) %>%
-  addCircles(
-    data = local_ames_train,
-    lng = ~Longitude, lat = ~Latitude,
-    color = "red",
-    fill = TRUE,
-    fillColor = "red",
-    radius = 6,
-    opacity = .4) %>%
-  addCircles(
-    data = local_ames_train[1,],
-    lng = ~to_log, lat = ~to_lat,
-    color = "yellow",
-    fill = TRUE,
-    fillColor = "yellow",
-    radius = 6,
-    opacity = .4) %>%
-  addCircles(
-    data = ames_train[-dists$row,],
-    lng = ~Longitude, lat = ~Latitude,
-    color = "white",
-    fill = TRUE,
-    fillColor = "white",
-    radius = 3,
-    opacity = .4) 
-
-for (i in 1:nrow(local_ames_train)) {
-  knn_map <- knn_map %>% 
-    addPolylines(lat = as.numeric(local_ames_train[i, c("to_lat", "Latitude")]), 
-                 lng = as.numeric(local_ames_train[i, c("to_log", "Longitude")]),
-                 color = "yellow",
-                 weight = 1)
-}
-
-knn_map
-```
-
-
----
-
-# _K_-Nearest Neighbors Model <img src="images/parsnip.png" class="title-hex"><img src="images/dplyr.png" class="title-hex">
-
-Consider the 2-nearest neighbor model. Would there be a difference in the estimated model performance between re-prediction and cross-validation? 
-
-`parsnip` has a `nearest_neighbors()` specification that uses the `kknn` package. `K` is standardized to the name `neighbors` and we will use that going forward.
-
-.pull-left[
-
-```{r spec-knn}
-spec_knn <- nearest_neighbor(neighbors = 2) %>%
-  set_engine("kknn")
-
-spec_knn
-
-fit_knn <- fit(spec_knn, geo_form, ames_train_log)
-```
-
-]
-
-.pull-right[
-
-```{r printed-fit-knn}
-fit_knn
-```
-
-]
-
-
----
-
-# _K_-Nearest Neighbors Model <img src="images/parsnip.png" class="title-hex"><img src="images/dplyr.png" class="title-hex">
-
-.pull-left[
-
-```{r repredicted-knn}
-# Predict on the same data you train with
-repredicted <- fit_knn %>%
-  predict(new_data = ames_train_log) %>%
-  bind_cols(ames_train_log) %>%
-  dplyr::select(.pred, Sale_Price_Log)
-
-repredicted
-```
-
-]
-
-.pull-right[
-
-```{r knn-ruckus}
-# The ruckus is here!
-repredicted %>% 
-  rsq(
-    truth = Sale_Price_Log, 
-    estimate = .pred
-  )
-```
-
-]
-
-
----
-# Resampling a 2-Nearest Neighbor Model <img src="images/rsample.png" class="title-hex"><img src="images/purrr.png" class="title-hex"><img src="images/parsnip.png" class="title-hex"><img src="images/dplyr.png" class="title-hex">
-
-That's pretty good but are we tricking ourselves? One of those two neighbors is always itself...
-
-Let's follow the same resampling process as before, reusing some of our other
-functions for generating the models, predictions, and performance metrics:
-
-.pull-left[
-
-```{r cv-with-knn}
-cv_splits <- cv_splits %>%
-  mutate(
-    # Fit a knn model for each split
-    models_knn = map(splits, fit_model, spec_knn),
-    
-    # Generate predictions on the assessment set
-    pred_knn = map2(splits, models_knn, compute_pred),
-    
-    # Calculation performance
-    perf_knn = map(pred_knn, compute_perf)
-  )
-```
-
-]
-
-.pull-right[
-
-```{r}
-# Unnest & compute resampled performance estimates
-cv_splits %>%
-  unnest(perf_knn) %>%
-  group_by(.metric) %>%
-  summarise(
-    .estimate_mean = mean(.estimate),
-    .estimate_sd = sd(.estimate)
-  )
-```
-
-]
-
----
-
-# Making Formal Comparisons
-
-```{r, include=FALSE}
-extract_rmse <- function(perf_list) {
-  perf_list %>%
-    bind_rows() %>%
-    filter(.metric == "rmse") %>%
-    pull(.estimate)
-}
-
-rmse_lm <- extract_rmse(cv_splits$perf_lm)
-rmse_knn <- extract_rmse(cv_splits$perf_knn)
-```
-
-
-The model appears to be a drastic improvement over simple linear regression but we are definitely getting highly optimistic results by re-predicting the training set. 
-
-We can try to make a more formal assessment of the two current models. 
-
-Both models used the _same_ resamples, so we have 10 estimates of performance that are matched.
-
-Does the matching mean anything? 
-
-Most likely **yes**. It is very common to see that there is a resample effect. Similar to repeated measures designs, we can expect a relationship between models and resamples. For example, some resamples will have the worst performance over different models and so on. 
-
-In other words, there is usually a within-resample correlation. For the two models, the estimated correlation in RMSE values is `r round(cor(rmse_lm ,rmse_knn), 3)`. 
-
-
----
-
-# The Resample Effect
-
-```{r cv-corr, echo = FALSE, fig.width=6, fig.height=4.25,  out.width = '60%', fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
-rs_comp <- data.frame(
-	rmse = c(rmse_lm, rmse_knn),
-	Model = rep(c("Linear\nRegression", "2-NN"), each = nrow(cv_splits)),
-	Resample = cv_splits$id
-)
-
-ggplot(rs_comp, aes(x = Model, y = rmse, group = Resample, col = Resample)) + 
-  geom_point() + 
-  geom_line() + 
-  theme(legend.position = "none")
-```
-
----
-
-# Model Comparison Accounting for Resampling
-
-With only two models, a paired _t_-test can be used to estimate the difference in RMSE between the models: 
-
-```{r cv-comp}
-t.test(rmse_lm, rmse_knn, paired = TRUE)
-```
-
-
-Hothorn _et al_ (2012) is the [original paper](https://scholar.google.com/scholar?hl=en&q=analysis+of+benchmark+experiments&btnG=&as_sdt=1%2C7&as_sdtp=) on comparing models using resampling. 
-
-We'll do more extensive analyses with `tidyposterior` soon. 
-
-
----
-
-# Overfitting
-
-Overfitting occurs when a model inappropriately picks up on trends in the training set that do not generalize to new samples. 
-
-When this occurs, assessments of the model based on the training set can show good performance that does not reproduce in future samples.   
-  
-Some models have specific "knobs" to control over-fitting
-
-* neighborhood size in nearest neighbor models is an example
-
-* the number of splits in a tree model
-
-Often, poor choices for these parameters can result in overfitting
-
-For example, the next slide shows a data set with two predictors. We want to be able to produce a line (i.e. decision boundary) that differentiates two classes of data.
-
----
-
-# Two Class Example
-
-.pull-left[
-```{r two-class-2panel, echo = FALSE, fig.width=5, fig.height=5.25,  out.width = '90%', fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
-set.seed(14034)
-two_class_dat <- easyBoundaryFunc(250, intercept = -6, interaction = 1.5)
-rng_1 <- extendrange(two_class_dat$X1)
-rng_2 <- extendrange(two_class_dat$X2)
-
-set.seed(1)
-contour_grid <- expand.grid(X1 = seq(rng_1[1], rng_1[2], length = 200),
-                            X2 = seq(rng_2[1], rng_2[2], length = 200))
-
-two_class_ctrl <- trainControl(method = "cv", classProbs = TRUE,
-                               summaryFunction = twoClassSummary)
-two_class_ctrl_rand <- trainControl(method = "cv", classProbs = TRUE,
-                                    search = "random", 
-                                    summaryFunction = twoClassSummary)
-set.seed(235)
-two_class_mod_1 <- train(class ~ X1 + X2,
-                         data = two_class_dat,
-                         method = "nnet",
-                         tuneLength = 20,
-                         trace = FALSE,
-                         metric = "ROC",
-                         trControl = two_class_ctrl_rand)
-
-two_class_prob_1 <- contour_grid
-two_class_prob_1$prob <- predict(two_class_mod_1, contour_grid, type ="prob")[,1]
-two_class_prob_1$Model = "Model #1"
-
-set.seed(235)
-two_class_mod_2 <- train(class ~ X1 + X2,
-                         data = two_class_dat,
-                         method = "nnet",
-                         tuneGrid = data.frame(decay = 0.003, size = 25),
-                         trace = FALSE,
-                         metric = "ROC",
-                         trControl = two_class_ctrl)
-
-two_class_prob_2 <- contour_grid
-two_class_prob_2$prob <- predict(two_class_mod_2, contour_grid, type ="prob")[,1]
-two_class_prob_2$Model = "Model #2"
-
-both <- rbind(two_class_prob_1, two_class_prob_2)
-
-ggplot(two_class_dat, aes(x = X1, y = X2)) +
-  geom_point(aes(color = class, shape = class), cex = 3, alpha = .5) +
-  guides(colour = guide_legend(""), shape = guide_legend("")) +
-  xlab("Predictor A") + ylab("Predictor B")  +
-  scale_colour_tableau() + 
-  theme(legend.position = "top")
-```
-
-]
-
-.pull-right[
-
-On the next slide, two classification boundaries are shown for a different model type not yet discussed.
-
-The difference in the two panels is solely due to different choices in tuning parameters. 
-
-One overfits the training data.
-
-]
-
-
----
-
-# Two Model Fits
-
-```{r two-class-overfit, echo = FALSE, fig.width=7.5, fig.height=4.25,  out.width = '70%', fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
-ggplot(two_class_dat, aes(x = X1, y = X2)) +
-  geom_point(aes(color = class, shape = class), cex = 2, alpha = .5) +
-  facet_wrap(~Model) + 
-  geom_contour(data = both, aes(z = prob), breaks = .5, col = "black", lwd = 1) + 
-  guides(colour = guide_legend(""), shape = guide_legend("")) +
-  xlab("Predictor A") + ylab("Predictor B")  +
-  theme(legend.position = "top") + 
-  scale_colour_tableau()
-```
-
-
----
-
-# Grid Search to Tune Models
-
-We usually don't have two-dimensional data so a quantitative method for under measuring overfitting is needed.  _Resampling_ fits that description. A simple method for tuning a model is to used _grid search_:
-
-<pre>
-├── Create a set of candidate tuning parameter values
-└── For each resample
-│   ├── Split the data into analysis and assessment sets
-│   ├── [preprocess data]
-│   ├── For each tuning parameter value
-│   │   ├── Fit the model using the analysis set
-│   │   └── Compute the performance on the assessment set and save 
-├── For each tuning parameter value, average the performance over resamples
-├── Determine the best tuning parameter value
-└── Create the final model with the optimal parameter(s) on the training set
-</pre>
-
-_Random search_ is a similar technique where the candidate set of parameter values are simulated at random across a wide range. Also, an example of _nested resampling_ can be found [here](http://appliedpredictivemodeling.com/blog/2017/9/2/njdc83d01pzysvvlgik02t5qnaljnd). 
-
----
-
-# Grid Search Computations
-
-* **The bad news**
-
-  All of the models (except the final model) are discarded. 
-
-* **The good news** 
-  
-  All of the models (except the final model) can be run in parallel. 
-
-Let's look at the Ames K-NN model and evaluate _neighbors_ = 1, 2, ..., 20 using the same 10-fold cross-validation as before. 
-
----
-
-# dials
-
-To tune `parsnip` models, two concepts are important to understand:
-
-1) `varying()` parameters are those that you want to tune over.
-
-2) `dials` is a package for filling in those varying parameters with a tuning grid.
-
-.pull-left[
-
-```{r dials-intro}
-# Parameter object for `neighbors`
-neighbors
-
-# Number of neighbors varies from 1-20
-param_grid <- 
-  neighbors %>% 
-  range_set(c(1, 20)) %>%
-  grid_regular(levels = 20)
-```
-
-]
-
-.pull-right[
-
-```{r}
-glimpse(param_grid)
-
-# Declare `neighbors` as varying
-spec_knn_varying <- nearest_neighbor(
-    neighbors = varying()
-  ) %>%
-  set_engine("kknn") %>% 
-  set_mode("regression")  # not required
-```
-
-]
-
-???
-
-Note that we don't have to set the mode but it prevents the specifications 
-from printing in the tibble as `<spec[?]>` instead of `<spec[+]>`
-
----
-
-# dials
-
-`merge()` can be used join a parameter grid to a specification. This fills in
-the `neighbors` field of the specification with the 20 different values.
-
-.pull-left[
-
-```{r dials-merge}
-param_grid <- 
-  param_grid %>%
-  mutate(
-    specs = merge(., spec_knn_varying)
-  )
-
-print(param_grid, n = 4)
-```
-
-]
-
-.pull-right[
-
-```{r dials-one-finalized-spec}
-param_grid$specs[[20]]
-```
-
-Now that we have the specification grid, we will start coding this algorithm from the inside out...
-
-]
-
-???
-``<spec[+]>` means that the mode is set and all parameters are known. 
-
-
----
-
-# A One Split + One Spec Combo <img src="images/rsample.png" class="title-hex"><img src="images/parsnip.png" class="title-hex"><img src="images/dplyr.png" class="title-hex">  
-
-These steps are:
-
-<pre>
-   ├── Fit the model using the analysis set
-   └── Compute the performance on the assessment set and save 
-</pre>
-
-In the code below, `split` will be one of the elements of `cv_splits$splits` and
-`spec` is one of `param_grid$specs`. We can reuse many of the functions we've
-already created.
-
-.pull-left[
-
-```{r grid-search-perf}
-fit_one_spec_one_split <- function(spec, split) {
-  mod <- fit_model(split, spec)
-  pred_df <- compute_pred(split, mod)
-  perf_df <- compute_perf(pred_df)
-  
-  # pull out only rmse
-  perf_df %>%
-    filter(.metric == "rmse") %>%
-    pull(.estimate)
-}
-```
-
-]
-
-.pull-right[
-
-```{r, single-spec-single-split}
-fit_one_spec_one_split(
-  param_grid$specs[[6]],  # Six neighbors
-  cv_splits$splits[[9]]  # Ninth Fold
-)
-```
-
-]
-
----
-
-# One Split + All Specs <img src="images/purrr.png" class="title-hex"><img src="images/parsnip.png" class="title-hex">
-
-Now we apply `fit_one_spec_one_split()` to every parameter combination.
-
-<pre>
-│   ├── For each tuning parameter value
-│   │   └── Run `fit_one_spec_one_split()`
-</pre>
-
-.pull-left[
-
-```{r grid-search-grid}
-fit_all_specs_one_split <- function(split, param_df) {
-  param_df %>%
-    mutate(
-      rmse = map_dbl(
-        specs, 
-        fit_one_spec_one_split, 
-        split = split
-      )
-    )
-}
-```
-
-]
-
-.pull-right[
-
-```{r all-spec-single-split}
-fit_all_specs_one_split(
-  cv_splits$splits[[1]], 
-  param_grid
-) %>%
-  print(n = 5)
-```
-
-]
-
----
-
-# All Splits + All Specs <img src="images/purrr.png" class="title-hex"><img src="images/parsnip.png" class="title-hex">
-
-<pre>
-└── For each resample
-│   └── Run `fit_all_specs_one_split()`
-</pre>
-
-Here, `split_df` is the resample object `cv_splits` and `param_df` is `param_grid`.
-
-```{r grid-search-top}
-fit_all_specs_all_splits <- function(split_df, param_df) {
-  split_df %>%
-    mutate(
-      spec_perf = map(
-        splits, 
-        fit_all_specs_one_split, 
-        param_df = param_df
-      )
-    ) %>%
-    dplyr::select(splits, id, spec_perf)
-}
-```
-
-This outputs a tibble with columns for the resample, the resample id (`"Fold01"`), and a
-list column of the performance of each tuning parameter combination for that resample.
-
----
-
-# Running the Code
-
-.pull-left[
-
-```{r tune-knn}
-resampled_grid <- fit_all_specs_all_splits(
-  split_df = cv_splits, 
-  param_df = param_grid
-)
-
-resampled_grid %>% slice(1:6)
-```
-
-]
-
-.pull-right[
-
-```{r unnested-tune}
-# Keep the unnested version
-unnested_grid <- 
-  resampled_grid %>%
-  unnest(spec_perf) %>%
-  dplyr::select(-specs)
-
-unnested_grid %>% slice(1:6)
-```
-
-]
-
----
-
-# The Performance Profile <img src="images/ggplot2.png" class="title-hex"><img src="images/dplyr.png" class="title-hex">
-
-.pull-left[
-
-To summarize the results for each value of `neighbors`: 
-
-```{r aummarize-knn, eval = FALSE}
-rmse_by_neighbors <- 
-  unnested_grid %>%
-  group_by(neighbors) %>%
-  summarize(rmse = mean(rmse))
-
-ggplot(
-    rmse_by_neighbors, 
-    aes(x = neighbors, y = rmse)
-  ) + 
-  geom_point() + 
-  geom_line()
-```
-]
-
-.pull-right[
-```{r ames-knn, echo = FALSE, fig.width=6.5, fig.height=4.25,  out.width = '100%', fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
-rmse_by_neighbors <- 
-  unnested_grid %>%
-  group_by(neighbors) %>%
-  summarize(rmse = mean(rmse))
-
-ggplot(
-    rmse_by_neighbors, 
-    aes(x = neighbors, y = rmse)
-  ) + 
-  geom_point() + 
-  geom_line()
-```
-
-Although it is numerically optimal, we are not required to use a value of `r rmse_by_neighbors$neighbors[which.min(rmse_by_neighbors$rmse)]` neighbors for the final model.
-
-]
-
----
-
-# Resampling Variation <img src="images/ggplot2.png" class="title-hex"><img src="images/dplyr.png" class="title-hex">
-
-
-.pull-left[
-
-How stable is this? We can also plot the individual curves and their minimums.
-
-```{r summarize-best, eval = FALSE}
-best_neighbors <- 
-  unnested_grid %>%
-  group_by(id) %>%
-  summarize(neighbors = neighbors[which.min(rmse)],
-            rmse      = rmse[which.min(rmse)])
-
-ggplot(rmse_by_neighbors, 
-       aes(x = neighbors, y = rmse)) + 
-  geom_point() + 
-  geom_line() + 
-  geom_line(data = unnested_grid, 
-            aes(group = id, col = id),
-            alpha = .2, lwd = 1) + 
-  geom_point(data = best_neighbors, 
-             aes(col = id),
-             alpha = .5, cex = 2) +
-  theme(legend.position = "none")
-```
-]
-.pull-right[
-```{r ames-knn-indiv, echo = FALSE, fig.width=6.5, fig.height=4.25,  out.width = '100%', fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
-best_neighbors <- 
-  unnested_grid %>%
-  group_by(id) %>%
-  summarize(neighbors = neighbors[which.min(rmse)],
-            rmse      = rmse[which.min(rmse)])
-
-ggplot(rmse_by_neighbors, 
-       aes(x = neighbors, y = rmse)) + 
-  geom_point() + 
-  geom_line() + 
-  geom_line(data = unnested_grid, 
-            aes(group = id, col = id),
-            alpha = .2, lwd = 1) + 
-  geom_point(data = best_neighbors, 
-             aes(col = id),
-             alpha = .5, cex = 2) +
-  theme(legend.position = "none")
-```
-
-]
-
----
-
-# Next Steps <img src="images/parsnip.png" class="title-hex">
-
-At this point, we would decide on a good value for _neighbors_, fit that model, and use it going forward:
-
-.pull-left[
-
-```{r knn-final-value, eval = FALSE}
-best_neighbor_value <- 
-  rmse_by_neighbors %>%
-  filter(rmse == min(rmse)) %>%
-  pull(neighbors)
-
-best_spec <- 
-  param_grid %>%
-  filter(neighbors == best_neighbor_value) %>%
-  pull(specs) %>%
-  .[[1]]
-```
-
-]
-
-.pull-right[
-
-```{r knn-final, eval=FALSE}
-fit(
-  best_spec,
-  geo_form,
-  ames_train
-)
-```
-
-]
-
-
-To reiterate: the previous `r nrow(resampled_grid)` models created during the grid search are not used once _neighbors_ is set. 
-
-Later, we will look at a high-level API in `caret` that streamlines almost all of this process for many different models. A similar process is being created for the modular tidy packages you see here. We'll talk about this later. 
+## What else?
