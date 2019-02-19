@@ -5,9 +5,6 @@ utils
 grDevices
 graphics
 stats
-tidyr
-dplyr
-tsibble
 lattice
 ggplot2
 caret
@@ -15,6 +12,10 @@ leaflet
 AppliedPredictiveModeling
 ggthemes
 DiagrammeR
+AmesHousing
+htmltools
+Cairo
+dplyr
 tidymodels
 broom
 scales
@@ -23,7 +24,11 @@ infer
 parsnip
 purrr
 recipes
+tidyr
 rsample
 tibble
 yardstick
-AmesHousing
+tidyverse
+readr
+stringr
+forcats

@@ -34,26 +34,27 @@ thm <- theme_bw() +
 theme_set(thm)
 ```
 
-In this section, we will introduce concepts that are useful for any type of machine learning model:
+In this presentation, we will cover a number of topics that transfer to any machine learning model:
 
-* _modeling_ versus the model
+* `purrr::map()` and list columns
 
-* data splitting
+* Interfaces for fitting models in R (formula, xy, parsnip)
 
-* resampling
+* Data splitting (training and test sets)
 
-* tuning parameters and overfitting
+* Resampling (cross validation, bootstraps)
 
-* model tuning
+* Fitting multiple models (purrr + rsample + parsnip = `r emo::ji("heart")`)
 
+We will use a simple linear regression model to demonstrate these concepts.
 
-Many of these topics will be put into action in later sections.
+_The point is not to create the best model, but to demonstrate tooling and best practices!_
 
 ---
 
-# Example Data Set - House Prices
+# Data Set - House Prices
 
-For regression problems, we will use the Ames IA housing data. There are 2,930 properties in the data. 
+We will use the Ames IA housing data. There are 2,930 properties in the data. 
 
 The Sale Price was recorded along with 81 predictors, including:
 
@@ -66,17 +67,20 @@ More details can be found in [De Cock (2011, Journal of Statistics Education)](h
 
 The raw data are at [`http://bit.ly/2whgsQM`](http://bit.ly/2whgsQM) but we will use a processed version found in the [`AmesHousing`](https://github.com/topepo/AmesHousing) package. 
 
+```{r}
+library(AmesHousing)
+ames <- make_ames()
+```
+
 ---
 
-# Example Data Set - House Prices
+# Data Set - House Prices
 
 ```{r ames-map, echo = FALSE, message = FALSE, fig.align='center', dev = "svg", warning=FALSE}
-library(AmesHousing)
 library(leaflet)
 library(htmltools)
 library(Cairo)
 library(dplyr)
-ames <- make_ames()
 
 col_key <- c(
   'NAmes',     '#0000FF',
@@ -168,7 +172,7 @@ ia_map
 
 ---
 
-# `tidymodels` Collection of Packages  <img src="images/tidymodels_hex.png" class="title-hex">
+# `tidymodels` <img src="images/tidymodels_hex.png" class="title-hex">
 
 
 ```{r tm}
@@ -179,17 +183,10 @@ Plus [`tidypredict`](http://tidypredict.netlify.com/), [`tidyposterior`](https:/
 
 ---
 
-# Examples of `purrr::map*` <img src="images/dplyr.png" class="title-hex"><img src="images/purrr.png" class="title-hex">
+# Examples of `purrr::map()` <img src="images/dplyr.png" class="title-hex"><img src="images/purrr.png" class="title-hex">
 
 ```{r purrr-setup, message = FALSE, echo=FALSE}
 library(tidyverse)
-
-ames_prices <- "http://bit.ly/2whgsQM" %>%
-  read_delim(delim = "\t") %>%
-  rename_at(vars(contains(' ')), funs(gsub(' ', '_', .))) %>%
-  rename(Sale_Price = SalePrice) %>%
-  filter(!is.na(Electrical)) %>%
-  select(-Order, -PID, -Garage_Yr_Blt)
 ```
 
 purrr contains functions that _iterate over lists_ without the explicit use of loops. They are similar to the family of apply functions in base R, but are type stable.
@@ -199,9 +196,10 @@ purrr contains functions that _iterate over lists_ without the explicit use of l
 ```{r purrr-example-lhs}
 library(purrr)
 
-mini_ames <- ames_prices %>%
-  select(Alley, Sale_Price, Yr_Sold) %>%
-  filter(!is.na(Alley))
+mini_ames <- ames %>%
+  select(Alley, Sale_Price, Year_Sold) %>%
+  filter(Alley != "No_Alley_Access") %>%
+  mutate(Alley = fct_drop(Alley))
 
 head(mini_ames, n = 5)
 ```
@@ -218,7 +216,7 @@ map(by_alley, head, n = 2)
 
 ---
 
-# Examples of `purrr::map*` <img src="images/dplyr.png" class="title-hex"><img src="images/purrr.png" class="title-hex">
+# Examples of `purrr::map()` <img src="images/dplyr.png" class="title-hex"><img src="images/purrr.png" class="title-hex">
 
 .pull-left[
 ```{r purrr-map-nrow}
@@ -235,8 +233,7 @@ map_int(by_alley, nrow)
 
 .pull-right[
 
-Complex operations can be specified using a _formula notation_. Access the current
-thing you are iterating over with `.x`.
+Complex operations can be specified using a _formula notation_. Access the current thing you are iterating over with `.x`.
 
 ```{r purrr-map-summarise}
 map(
@@ -266,11 +263,16 @@ ames_lst_col
 .pull-right[
 
 ```{r list-col-mutate}
-ames_lst_col %>%
+ames_lst_col <- ames_lst_col %>%
   mutate(
-    n_row = map_int(data, nrow),
-    max   = map_dbl(data, ~max(.x$Sale_Price))
+    model = map(
+      .x = data,
+      .f =  ~lm(Sale_Price ~ Year_Sold, data = .x)
+    ),
+    perf  = map(model, broom::tidy)
   )
+
+ames_lst_col
 ```
 
 ]
@@ -279,7 +281,7 @@ ames_lst_col %>%
 
 # List-columns and `unnest()` <img src="images/purrr.png" class="title-hex"><img src="images/tidyr.png" class="title-hex">
 
-`unnest()` repeats regular columns once for each row of the unnested list-column. `"Pave"` is repeated 78 times, and `"Grvl"` is repeated 120 times.
+`unnest()` repeats regular columns once for each row of the unnested list-column. `"Paved"` is repeated 2 times, and `"Gravel"` is repeated 2 times.
 
 .pull-left[
 
@@ -294,7 +296,7 @@ You can unnest multiple list-columns at once if they have the same number of row
 .pull-right[
 
 ```{r unnest-example}
-unnest(ames_lst_col, data)
+unnest(ames_lst_col, perf)
 ```
 
 ]
@@ -312,6 +314,8 @@ class: inverse, middle, center
 Common steps during model building are:
 
 * estimating model parameters (i.e. training models)
+
+* computing resampled performance estimates to compare models with
 
 * determining the values of _tuning parameters_ that cannot be directly calculated from the data
 
@@ -447,10 +451,10 @@ Let's load the example data set and split it. We'll put 75% into training and 25
 
 ```{r ames-split, message = FALSE}
 library(AmesHousing)
-ames <- 
-  make_ames() %>% 
-  # Remove quality-related predictors
-  dplyr::select(-matches("Qu"))
+
+# Remove quality-related predictors
+ames <- dplyr::select(ames, -matches("Qu"))
+
 nrow(ames)
 
 # Make sure that you get the same random numbers
@@ -460,7 +464,7 @@ data_split <- initial_split(ames, strata = "Sale_Price")
 ames_train <- training(data_split)
 ames_test  <- testing(data_split)
 
-nrow(ames_train)/nrow(ames)
+nrow(ames_train) / nrow(ames)
 ```
 ???
 
@@ -588,8 +592,10 @@ Some modeling function have a non-formula (XY) interface. This usually has argum
 ```{r non-formula, eval = FALSE}
 # Usually, the variables must all be numeric
 pre_vars <- c("Year_Sold", "Longitude", "Latitude")
-model_fn(x = ames_train[, pre_vars],
-         y = ames_train$Sale_Price)
+model_fn(
+  x = ames_train[, pre_vars],
+  y = ames_train$Sale_Price
+)
 ```
 
 This is inconvenient if you have transformations, factor variables, interactions, or any other operations to apply to the data prior to modeling. 
@@ -631,9 +637,7 @@ names(simple_lm_values)
   
   - `keras` for regression using tensorflow
   
-- But...remember the consistency slide?
-
-  - Each interface has its own minutae to remember
+- But...each interface has its own minutae to remember `r emo::ji("cry")`
   
   - `parsnip` standardizes all that!
   
@@ -675,7 +679,7 @@ fit_lm
 
 ---
 
-# Different interfaces <img src="images/parsnip.png" class="title-hex">
+# Different Interfaces <img src="images/parsnip.png" class="title-hex">
 
 `parsnip` is not picky about the interface used to specify terms. Remember, `lm()` only allowed the formula interface!
 
@@ -1220,14 +1224,43 @@ Previously, I mentioned that the performance metrics that were naively calculate
 
 Linear regression is a _high bias model_. This means that it is fairly incapable at being able to adapt the underlying model function (unless it is linear). For this reason, linear regression is unlikely to **overfit** to the training set and our two estimates are likely to be the same. 
 
-We'll consider another model shortly that is _low bias_ since it can, theoretically, easily adapt to a wide variety of true model functions. 
+---
 
-However, as before, there is also variance to consider. Linear regression is very stable since it leverages all of the data points to estimate parameters. Other methods, such as tree-based models, are not and can drastically change if the training set data is slightly perturbed. 
+# What Was the Ruckus?
 
-**tl;dr**: the earlier concern is real but linear regression is less likely to be affected.  
+There are other models, such as _K-Nearest Neighbors_ that are  _low bias_ since they can, theoretically, easily adapt to a wide variety of true model functions. 
+
+A similar analysis using a K-Nearest Neighbors model with 2 neighbors shows a **95% $R^2$** in-sample, but a **68% $R^2$** when resampled.
+
+There is also variance to consider. Linear regression is very stable since it leverages all of the data points to estimate parameters. Other methods, such as _tree-based models_, are not and can drastically change if the training set data is slightly perturbed. 
+
+**tl;dr**: The earlier concern is real, but linear regression is less likely to be affected.  
+
+**tl;dr2**: Resampling let's you shoot yourself in the foot with a nerfgun, rather than a shotgun.
 
 ---
 
 # What did we learn?
 
+- `parsnip` for standardized model fitting
+
+- `rsample` for data splitting
+
+  - Training / Test set
+  
+  - Resampling (cross validation, bootstraps)
+
+- `purrr` and list-columns for multiple models
+
 ## What else?
+
+* [`http://www.tidyverse.org/`](http://www.tidyverse.org/)
+* [R for Data Science](http://r4ds.had.co.nz/)
+
+About these slides.... they were created with Yihui's [`xaringan`](https://github.com/yihui/xaringan) and the stylings are a slightly modified version of Patrick Schratz's [Metropolis theme](https://github.com/pat-s/xaringan-metropolis).
+
+---
+layout: false
+class: inverse, middle, center
+
+# Thank You!
