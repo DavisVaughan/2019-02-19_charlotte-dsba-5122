@@ -102,7 +102,7 @@ names(simple_lm_values)
 # # optional plots 
 # 
 # simple_lm_values %>%
-#   ggplot(aes(x = 10 ^ .fitted, y = 10 ^ `log10(Sale_Price)`)) +
+#   ggplot(aes(x = 10 ^ .fitted, y = 10 ^ `log10.Sale_Price.`)) +
 #   geom_point(alpha = .3) +
 #   geom_abline(col = "green", alpha = .5) +
 #   geom_smooth(se = FALSE, col = "red", lty = 2, lwd = 1, alpha = .5)
