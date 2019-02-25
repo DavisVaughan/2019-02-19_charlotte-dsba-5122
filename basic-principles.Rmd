@@ -305,100 +305,6 @@ unnest(ames_lst_col, perf)
 layout: false
 class: inverse, middle, center
 
-# Modeling
-
----
-
-# The Modeling _Process_
-
-Common steps during model building are:
-
-* estimating model parameters (i.e. training models)
-
-* computing resampled performance estimates to compare models with
-
-* determining the values of _tuning parameters_ that cannot be directly calculated from the data
-
-* model selection (within a model type) and model comparison (between types)
-
-* calculating the performance of the final model that will generalize to new data
-
-Many books and courses portray predictive modeling as a short sprint. A better analogy would be a marathon or campaign (depending on how hard the problem is). 
-
-
----
-
-# What the Modeling Process Usually Looks Like
-
-```{r mod-process, echo = FALSE, out.width = '95%', fig.width=8, fig.height=2.5, fig.align='center', dev = 'svg', dev.args = list(bg = "transparent"), warning=FALSE}
-widths <- c(8, 4, 10, 2, 6, 6, 
-            rep(1, 19), 2,
-            rep(1, 19), 2,
-            rep(1, 19), 2,
-            rep(1, 19), 2,
-            4, 8, 15,
-            rep(1, 29), 6,
-            rep(1, 29), 4,
-            1)
-srt <- c(1, cumsum(widths))
-stp <- srt[-1]
-srt <- srt[-length(srt)]
-
-diag_cols <- c(EDA = "#377EB8", "Quantitative Analysis" = "#A6CEE3", 
-               "Feature Engineering" = "#4DAF4A", "Model Fit" = "#E41A1C", 
-               "Model Tuning" = "grey")
-
-bar_loc <- data.frame(srt = srt,
-                  stp = stp,
-                  g = c("EDA", "Quantitative Analysis", "EDA", "Quantitative Analysis", "EDA", "Feature Engineering", 
-                        rep(c("Model Fit", "Model Tuning"), 40),
-                        "Quantitative Analysis", "EDA", "Feature Engineering",
-                        rep(c("Model Fit", "Model Tuning"), 14), "Model Fit", "Feature Engineering",
-                        rep(c("Model Fit", "Model Tuning"), 14), "Model Fit", "Quantitative Analysis",
-                        "Model Fit"))
-bar_loc$ytop <- 1.9
-bar_loc$ybot <- 1
-bar_loc$g <- factor(as.character(bar_loc$g), 
-                levels = c("EDA", "Quantitative Analysis", "Feature Engineering",
-                           "Model Fit", "Model Tuning"))
-text_loc <- data.frame(x = c(1, 8, 30, 36, 120, 124, 132, 147, 211, 215)+1,
-                       y = 2.1)
-text_loc$label <- letters[1:nrow(text_loc)]
-
-mod_loc <- data.frame(x = c(45, 66, 87, 107, 162, 195)+1,
-                      y = .75, 
-                      label = c("Model\n#1", "Model\n#2", "Model\n#3", "Model\n#4",
-                                "Model\n#2", "Model\n#4"))
-
-ggplot(bar_loc) + 
-  geom_rect(aes(fill = g, xmin = srt, xmax = stp,
-                ymin = ybot, ymax = ytop), alpha = .7)  + 
-  theme(
-    legend.position = "bottom",
-    legend.background = element_blank(),
-    axis.line = element_blank(),
-    axis.text.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks = element_blank(),
-    axis.title.x = element_text(hjust = .05),
-    axis.title.y = element_blank(),
-    panel.background = element_blank(),
-    panel.border = element_blank(),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.background = element_blank()
-    ) +
-  scale_fill_manual(values = diag_cols, name = "") +
-  geom_text(data = text_loc, aes(x = x, y = y, label = label)) + 
-  geom_text(data = mod_loc, aes(x = x, y = y, label = label), size = 3) +   
-  xlab("Time") + 
-  ylim(c(.5, 2.25))
-```
-
----
-layout: false
-class: inverse, middle, center
-
 #  Data Usage
 
 ---
@@ -426,50 +332,26 @@ Given a fixed amount of data:
 
 * too much spent in testing won't allow us to get a good assessment of model parameters
 
-Statistically, the best course of action would be to use all the data for model building and use statistical methods to get good estimates of error.
-
-From a non-statistical perspective, many consumers of complex models emphasize the need for an untouched set of samples to evaluate performance.
-
----
-
-# Mechanics of Data Splitting
-
-There are a few different ways to do the split: simple random sampling, _stratified sampling based on the outcome_, by date, or methods that focus on the distribution of the predictors.
-
-For stratification:
-
-* **classification**: this would mean sampling within the classes to preserve the distribution of the outcome in the training and test sets
-
-* **regression**: determine the quartiles of the data set and sample within those artificial groups
-
-
 ---
 
 # Ames Housing Data <img src="images/rsample.png" class="title-hex">
 
-Let's load the example data set and split it. We'll put 75% into training and 25% into testing. 
+Let's split the Ames data. We'll put 75% into training and 25% into testing. 
 
 ```{r ames-split, message = FALSE}
-library(AmesHousing)
-
-# Remove quality-related predictors
-ames <- dplyr::select(ames, -matches("Qu"))
+library(rsample)
 
 nrow(ames)
 
 # Make sure that you get the same random numbers
 set.seed(4595)
-data_split <- initial_split(ames, strata = "Sale_Price")
+data_split <- initial_split(ames, prop = 0.75)
 
 ames_train <- training(data_split)
 ames_test  <- testing(data_split)
 
 nrow(ames_train) / nrow(ames)
 ```
-???
-
-The select statement removes subjective quality scores which, to me, seems
-like it should be an outcome and not a predictor. 
 
 ---
 
@@ -488,7 +370,7 @@ training(data_split)
 ```
 
 ```{r}
-## # A tibble: 2,199 x 81
+## # A tibble: 2,198 x 81
 ##    MS_SubClass MS_Zoning Lot_Frontage Lot_Area Street Alley Lot_Shape Land_Contour Utilities Lot_Config Land_Slope
 ##    <fct>       <fct>            <dbl>    <int> <fct>  <fct> <fct>     <fct>        <fct>     <fct>      <fct>     
 ##  1 One_Story_… Resident…          141    31770 Pave   No_A… Slightly… Lvl          AllPub    Corner     Gtl       
@@ -499,38 +381,6 @@ training(data_split)
 ## # … and many more rows and columns
 ## # …
 ```
-
-
----
-
-# Outcome Distributions <img src="images/ggplot2.png" class="title-hex">
-
-.pull-left[
-
-```{r ames-split-dists, eval = FALSE}
-## Do the distributions line up? 
-ggplot(ames_train, aes(x = Sale_Price)) + 
-  geom_line(stat = "density", 
-            trim = TRUE) + 
-  geom_line(data = ames_test, 
-            stat = "density", 
-            trim = TRUE, col = "red")
-```
-
-]
-
-.pull-right[
-
-```{r ames-split-dists-dist, echo = FALSE, fig.width=6, fig.height=4.25,  out.width = '100%', fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
-ggplot(ames_train, aes(x = Sale_Price)) + 
-  geom_line(stat = "density", trim = TRUE) + 
-  geom_line(data = ames_test, 
-            stat = "density", 
-            trim = TRUE, col = "red") 
-```
-
-]
-
 
 ---
 layout: false
@@ -573,8 +423,6 @@ This is very convenient but it has some disadvantages.
 
 * You can't nest in-line functions such as `model_fn(y ~ pca(scale(x1), scale(x2), scale(x3)), data = dat)`.
 
-* All the model matrix calculations happen at once and can't be recycled when used in a model function. 
-
 * For very _wide_ data sets, the formula method can be [extremely inefficient](https://rviews.rstudio.com/2017/03/01/the-r-formula-method-the-bad-parts/). 
 
 * There are limited _roles_ that variables can take which has led to several re-implementations of formulas. 
@@ -602,7 +450,7 @@ This is inconvenient if you have transformations, factor variables, interactions
 
 Overall, it is difficult to predict if a package has one or both of these interfaces. For example, `lm` only has formulas. 
 
-There is a **third interface**, using _recipes_ that will be discussed later that solves some of these issues. 
+There is a **third interface**, using _recipes_ that solves some of these issues. 
 
 ---
 
@@ -761,7 +609,7 @@ These statistics are generated from _predicting on the training data used to fit
 
 ### Idea!
 
-The tests set is used for assessing performance. **Should we predict the test set** and use those results to estimate these statistics? 
+The test set is used for assessing performance. **Should we predict the test set** and use those results to estimate these statistics? 
 
 ---
 
@@ -815,7 +663,7 @@ They attempt to simulate slightly different versions of the training set. These 
 
 This process is repeated many times. 
 
-There are different flavors or resampling but we will focus on two methods. 
+There are different flavors or resampling but we will focus on one method. 
 
 ]
 
@@ -943,75 +791,6 @@ _V_ is usually taken to be 5 or 10 and leave one out cross-validation has each s
 
 ---
 
-#  10-Fold Cross-Validation with _n_ = 50
-
-```{r cv-plot, echo = FALSE, message = FALSE, fig.width=6, fig.height=4.25,  out.width = '60%', fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
-
-set.seed(4121)
-cv10 <- vfold_cv(ames[1:50, ])
-cv10 <- tidy(cv10) %>%
-  mutate(Row = factor(Row, levels = paste(1:50))) 
-
-ggplot(cv10, aes(x = Fold, y = Row, fill = Data)) + 
-  geom_tile() + scale_fill_brewer(palette = "Paired") + 
-  xlab("") + ylab("Training Set Sample") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1), 
-        axis.text.y = element_text(size = rel(.5)), 
-        legend.position = "top",
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank())
-```
-
-
----
-
-# Bootstrapping
-
-A bootstrap sample is the _same size_ as the training set but each data point is selected _with replacement_. 
-
-* _Analysis set_
-
-  Will contain more than one replicate of a training set instance.
-  
-* _Assessment set_
-
-  Contains all samples that were never included in the corresponding bootstrap set.
-  Often called the "out-of-bag" sample and can vary in size!
-
-On average, `r (1-exp(-1))*100`% of the training set is contained _at least once_ in the bootstrap sample. 
-
----
-
-#  Bootstrapping with _n_ = 50
-
-```{r boot-plot, echo = FALSE, warning=FALSE, message = FALSE, fig.width=6, fig.height=4.25,  out.width = '60%', fig.align='center', dev = 'svg', dev.args = list(bg = "transparent")}
-set.seed(4121)
-bt_rows <- bootstraps(ames[1:50, ], times = 10)
-
-bt_rows <- data.frame(Row = unlist(lapply(bt_rows$splits, function(x) sort(x$in_id))),
-                      Resample = rep(recipes:::names0(10, "Resample"), each = 50))
-
-bt_rows <- bt_rows %>%
-  group_by(Resample, Row) %>%
-  summarize(Replicates = length(Row)) %>%
-  mutate(Row = factor(Row, levels = paste(1:50)),
-         Replicates = factor(Replicates))
-
-ggplot(bt_rows, aes(x = Resample, y = Row, fill = Replicates)) + 
-  geom_tile() + scale_fill_brewer() + 
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank()) + 
-  xlab("") + ylab("Training Set Sample") + 
-  theme_bw() + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1), 
-        axis.text.y = element_text(size = rel(.5)), 
-        legend.position = "top",
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank())
-```
-
----
-
 # Cross-Validating Using `rsample` <img src="images/rsample.png" class="title-hex">
 
 .pull-left[
@@ -1020,8 +799,7 @@ ggplot(bt_rows, aes(x = Resample, y = Row, fill = Replicates)) +
 set.seed(2453)
 cv_splits <- vfold_cv(
   data = ames_train, 
-  v = 10, 
-  strata = "Sale_Price"
+  v = 10
 )
 cv_splits %>% slice(1:6)
 ```
@@ -1120,8 +898,7 @@ Next, we will attach the predictions for each resample:
 compute_pred <- function(split, model) {
   
   # Extract the assessment set
-  assess <- assessment(split) %>%
-    mutate(Sale_Price_Log = log10(Sale_Price))
+  assess <- assessment(split)
   
   # Compute predictions (a df is returned)
   pred <- predict(model, new_data = assess)
@@ -1162,7 +939,7 @@ compute_perf <- function(pred_df) {
   
   numeric_metrics(
     pred_df, 
-    truth = Sale_Price_Log, 
+    truth = log10(Sale_Price), 
     estimate = .pred
   )
   
@@ -1231,8 +1008,6 @@ Linear regression is a _high bias model_. This means that it is fairly incapable
 There are other models, such as _K-Nearest Neighbors_ that are  _low bias_ since they can, theoretically, easily adapt to a wide variety of true model functions. 
 
 A similar analysis using a K-Nearest Neighbors model with 2 neighbors shows a **95% $R^2$** in-sample, but a **68% $R^2$** when resampled.
-
-There is also variance to consider. Linear regression is very stable since it leverages all of the data points to estimate parameters. Other methods, such as _tree-based models_, are not and can drastically change if the training set data is slightly perturbed. 
 
 **tl;dr**: The earlier concern is real, but linear regression is less likely to be affected.  
 
